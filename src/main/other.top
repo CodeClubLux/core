@@ -1,0 +1,35 @@
+def map[T, X](func: |T| -> X, x: []T) []X =
+    x.map func
+
+def filter[T](func: |T| -> bool, x: []T, ) []T =
+    x.filter func
+
+def reduce[T](func: |T,T| -> T, x: []T) T =
+    x.reduce func
+
+def comp[T,X](func: |T| -> X, x: T) X =
+    func x
+
+def zip[T](x: []T, y: []T) [][]T =
+    var newArr: [][]T = []
+
+    var i = 0
+    while i < x.length do
+        newArr = newArr.append ([x[i] , y[i]])
+        i += 1
+
+    newArr
+
+def append[T](x: T, arr: []T) []T =
+    arr.append x
+
+def first[T](x: []T) T =
+    x[0]
+
+def toEffect[T, X](f: |T| -> X) |T| do X =
+    def func(arg: T) X do
+        f arg
+
+    func
+
+//*/

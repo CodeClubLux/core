@@ -1,0 +1,8 @@
+import "html"
+
+let app-state = newAtom 0
+
+let render = html.comp |p: int, a|
+    html.h1 \[], "Hello World's"
+
+html.app render, app-state
