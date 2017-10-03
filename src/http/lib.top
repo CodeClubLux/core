@@ -1,3 +1,33 @@
+/** # Http
+
+@Server
+
+@Response
+
+@Request
+
+The port the server is expected to start on
+@port
+
+Create a new server
+@server
+
+@handleQuery
+
+When parsing the request add
+```
+def query(q: Routes) Response do
+    match q with
+        Hello end ->
+            end "Hello World!"
+
+def parse(req: Request) Response do
+    match req.url with
+        "/query" ->
+            handleQuery req, query
+```
+*/
+
 type Server =
     listen: |int| do none
 
@@ -6,6 +36,7 @@ type NodeHTTP =
 
 type Request =
     url: string
+    body: string
 
 type Response =
     status: int
@@ -15,15 +46,19 @@ type Response =
 def Response.toString(self) string =
     "Response({self.status}, {self.content-type}, {self.body})"
 
-let response = Response {
+let response = Response{
     status = 200
     content-type = "text/plain"
     body = ""
 }
 
+ext full encodeURI: |string| -> string = "encodeURI"
+ext full encodeURIComponent: |string| -> string = "encodeURIComponent"
+
 ext node port: int = "process.env.PORT || 3000"
-ext client get: |string| do Response = "_http_get"
+ext full get: |string| do Response = "_http_get"
+ext full post: |string, string| do Response = "_http_post"
 
 ext node server: ||Request| do Response| -> Server = "server_createServer"
-ext node handleQuery: [T: enum]|string, |T| do Response| do Response = "server_handleQuery"
+ext node handleQuery: [T: enum]|Request, |T| do Response, |Any| -> T| do Response = "server_handleQuery"
 ext node isQuery: |string| -> bool = "server_isQuery"

@@ -1,7 +1,8 @@
-
     {
-        "name": "EC",
+        "name": "Core",
         "target": "full",
+        "description": "Standard Library for Top",
+        "git": "https://github.com/CodeClubLux/core.git",
         "version": 0,
         "linkWith-client": ["js/bundle.js"],
         "linkWith-node": ["js/node.js"]
