@@ -1,0 +1,15 @@
+from "sub" import (Sub)
+
+ext client on-hash-change: [T]|Atom[T], |string| do T| -> Sub = "_router_onUrlChange"
+ext client get-hash: || do string = "_router_getHash"
+ext client change-hash: |string| do none = "_router_changeHash"
+
+type Router[T] =
+    init: T
+    sub: |Atom[T]| -> Sub
+
+def new-router[T](route: |string| do T) Router[T] do
+    Router{
+        route get-hash!
+        on-hash-change _, route
+    }

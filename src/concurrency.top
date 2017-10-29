@@ -1,0 +1,87 @@
+type Channel[T] with
+    buffer: int
+    op_set: |T| do none
+    unary_read: || do T
+
+type Future[T] with
+    unary_read: || do T
+
+
+ext full chan: [T]|int| -> Channel[T] = '
+    function(buffer) {
+        return {
+            buffer: buffer,
+            listeners: [],
+            senders: [],
+            op_set: function(value, next) {
+                if (this.senders.length < this.buffer.length) {
+                    this.senders.push([value, _empty_func]);
+                    next(); //non blocking
+                } else if (this.senders.length >= buffer || this.listeners.length == 0) {
+                    this.senders.push([value, next]); //blocking
+                } else {
+                    var listener = this.listeners.shift(0);
+                    listener(value);
+                    next();
+                }
+            },
+            unary_read: function(next) {
+                if (this.senders.length == 0) {
+                     this.listeners.push(next);
+                } else {
+                    var result = this.senders.shift(0);
+                    next(result[0]);
+                    result[1]();
+                }
+            }
+        }
+    }
+'
+
+ext full spawn: [T]||| do T| do Future[T] = '
+    function(func, next) {
+        let future =
+            {
+                resolved: false,
+                value: undefined,
+                listeners: [],
+                resolve: function(value) {
+                    for (var i = 0; i < this.listeners; i++) {
+                        this.listeners[i](value);
+                    }
+
+                    this.value = value;
+                    this.resolved = true;
+                },
+                unary_read: function(next) {
+                    if (!this.resolved) {
+                         this.listeners.push(next);
+                    } else {
+                        return this.value;
+                    }
+                }
+            }
+
+        func(function(value) {
+            future.resolve(value);
+        })
+        next(future);
+    }
+'
+
+from "html" import (Event, Attribute)
+
+type EventHandler is |Channel[Event], |Event| do none| do none
+type Update[T] is |T, Event| do T
+type DomEvent[T] is |Update[T], Atom[T]| -> Attribute
+
+def to-event-handler[T](func: EventHandler, domEvent: DomEvent[T], f: |T, Event| do T, a: Atom[T]) Attribute =
+    let attr = domEvent f, a
+
+    html.Attribute{
+        attr.name
+        {
+            attribute = attr.value
+            func = func
+        }
+    }

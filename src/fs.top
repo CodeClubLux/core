@@ -1,0 +1,57 @@
+type Exception with
+    toString: || -> string
+
+type Either either
+    Ok(string)
+    Error(Exception)
+
+def Either.toString(self) string =
+    match self with
+        Ok value -> value
+        Error exception -> toString exception
+
+type FS with
+    unlink: |string| do bool
+    rename: |string| do bool
+    constants: { R_OK: int }
+    access: |string, int| do bool
+    writeFile: |string, string| do bool
+    readFile: |string, |bool, string| -> none| -> none
+
+ext node fs: FS = 'require("fs")'
+
+def toError(err: bool) Either =
+    if err then
+        Error err
+    else
+        Ok ""
+
+ext node joinErrAndRes: | ||bool, string| -> none| -> none| do (bool, string) = '
+function(nodeFunc, next) {
+    nodeFunc(function(err, res) {
+        next([err, res]);
+
+    })
+}'
+
+def callNodeFunc(func: ||bool, string| -> none| -> none) Either do
+    let (err, res) = joinErrAndRes func
+    if err then
+        Error err
+    else
+        Ok res
+
+def delete(filename: string) Either do
+    toError fs.unlink filename
+
+def rename(filename: string) Either do
+    toError fs.rename filename
+
+def acess(filename: string) Either do
+    toError fs.access filename, fs.constants.R_OK
+
+def writeFile(filename: string, text: string) Either do
+    toError fs.writeFile filename, text
+
+def readFile(filename: string) Either do
+    callNodeFunc fs.readFile filename

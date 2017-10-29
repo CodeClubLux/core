@@ -1,0 +1,35 @@
+from "sub" import (Sub)
+
+type Date with
+    hours: int
+    minutes: int
+    seconds: int
+
+type Time is float
+
+let millisecond : Time = 1
+
+let second : Time = 1000.0 * millisecond
+
+let minute : Time = 60.0 * second
+
+let hour : Time = 60.0 * minute
+
+def inMilliseconds(t: Time) float =
+    t
+
+def inSeconds(t: Time) float =
+    t / second
+
+def inMinutes(t: Time) float =
+    t / minute
+
+def inHours(t: Time) float =
+    t / hour
+
+ext full now: || do Time = "toAsync(Date.now)"
+ext full currentDate: || do Date = '_time_currentDate'
+ext full set-interval: ||| do none, Time| -> int = 'function(a,b){return setInterval(function(){a(function(){});}, b);}'
+
+ext full clear-interval: |int| do none = "toAsync(clearInterval)"
+ext full every: [T]|Time, Atom[T], |T, Date| -> T| -> Sub = "_time_every"
