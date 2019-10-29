@@ -1,0 +1,4 @@
+{
+  "files": ["sub"],
+  "linkWith": ["sub.js"]
+}

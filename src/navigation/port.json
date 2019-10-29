@@ -1,0 +1,4 @@
+{
+  "files": ["router"],
+  "linkWith": ["router.js"]
+}

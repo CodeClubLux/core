@@ -1,0 +1,40 @@
+type FS with
+    unlink: |string| do bool
+    rename: |string| do bool
+    constants: { R_OK: int }
+    access: |string, int| do bool
+    writeFile: |string, string| do bool
+    readFile: |string, |bool, string| -> none| -> none
+
+ext node fs: FS = 'require("fs")'
+
+ext node callNodeFunc: | ||bool, string| -> none| -> none| do Result[string, string] = 'function(nodeFunc, next) {
+    nodeFunc(function(err, res) {
+        if (err) {
+            next(Error(toString(err)));
+        } else {
+            next(Ok(res));
+        }
+    });
+}'
+
+def toError(err: bool) Result[string,string] =
+    if err then
+        Error::[string,string] toString err
+    else
+        Ok "Succeeded"
+
+def delete(filename: string) Result[string,string] do
+    toError fs.unlink filename
+
+def rename(filename: string) Result[string,string] do
+    toError fs.rename filename
+
+def acess(filename: string) Result[string,string] do
+    toError fs.access filename, fs.constants.R_OK
+
+def writeFile(filename: string, text: string) Result[string,string] do
+    toError fs.writeFile filename, text
+
+def readFile(filename: string) Result[string,string] do
+    callNodeFunc fs.readFile filename

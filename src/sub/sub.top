@@ -1,0 +1,5 @@
+type Sub =
+
+ext full register: [T]||T,Atom[T]| -> Sub, Atom[T]| do none = "_sub_register"
+ext full batch: |[]Sub| -> Sub = "_sub_batch"
+ext full nil: Sub = "_sub_none"

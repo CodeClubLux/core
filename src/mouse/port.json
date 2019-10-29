@@ -1,0 +1,4 @@
+{
+  "files": ["mouse"],
+  "linkWith": ["mouse.js"]
+}

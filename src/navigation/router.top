@@ -1,0 +1,24 @@
+from "sub" import (Sub, register)
+import "html"
+
+ext client on-hash-change: [T]|Atom[T], |string| do T| -> Sub = "_router_onUrlChange"
+ext client get-hash: || do string = "_router_getHash"
+ext client change-hash: |string| do none = "_router_changeHash"
+
+type Router[T] =
+    init: || do T
+    sub: |Atom[T]| -> Sub
+
+def Router[T].start-app(self, render: |T, Atom[T]| -> html.VNode a: Atom[T]) do
+    def subs(model: T, atom: Atom[T]) Sub =
+        self.sub atom
+
+    register subs, a
+    log "going to render the app"
+    html.start-app render, a
+
+def new-router[T](route: |string| do T) Router[T] do
+    Router{
+        (defer route) get-hash!
+        on-hash-change _, route
+    }

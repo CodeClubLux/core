@@ -1,0 +1,25 @@
+type Regex =
+
+ext full regex: |string| -> Regex = 'function(s) { return new RegExp(s); }'
+
+//ext full escape: |string| -> string = 'function(str) { return str.replace(/[-\/\\^$*+?.()|[\]{}]/g, "\\$&"); }'
+
+ext full case-insensitive: |Regex| -> Regex = 'function(raw) { return new RegExp(re.source, "gi"); }'
+ext full regex-find: |Regex, string| -> []string = 'function(re,str) { return fromArray(str.match(re)); }'
+
+ext full replace: |Regex, string, string| -> string = 'function(re,_with,str) { return str.replace(re,_with); }'
+
+ext full split: |string, Regex| -> []string = 'function(s,re) { return fromArray(s.split(re)); }'
+ext full regex-test: |Regex, string| -> bool = 'function(re,s) { return re.test(s); }'
+ext full regex-string: |Regex| -> string = 'function(re) { return re.toString(); }'
+
+def Regex.findIn(self, str: string) []string =
+    regex-find self, str
+
+def Regex.test(self, str: string) bool =
+    regex-test self, str
+
+def Regex.toString(self) string =
+    regex-string self
+
+//add more functionality later
