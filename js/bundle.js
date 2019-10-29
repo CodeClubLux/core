@@ -1,41 +1,233 @@
 (function e(t,n,r){function s(o,u){if(!n[o]){if(!t[o]){var a=typeof require=="function"&&require;if(!u&&a)return a(o,!0);if(i)return i(o,!0);var f=new Error("Cannot find module '"+o+"'");throw f.code="MODULE_NOT_FOUND",f}var l=n[o]={exports:{}};t[o][0].call(l.exports,function(e){var n=t[o][1][e];return s(n?n:e)},l,l.exports,e,t,n,r)}return n[o].exports}var i=typeof require=="function"&&require;for(var o=0;o<r.length;o++)s(r[o]);return s})({1:[function(require,module,exports){
-(function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
-  (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
-  m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
-})(window,document,'script','https://www.google-analytics.com/analytics.js','ga');
-
-ga('create', 'UA-91044204-1', 'auto');
-ga('send', 'pageview');
-
-window.virtualDom = require("virtual-dom");
+virtualDom = require("virtual-dom");
 //require("./three_wrapper");
+/*
+def callAction[M](action: |M, Event| -> Action[M], a: Atom[M], _model: M, event: html.Event) M do
+    let result = action <-a, event
 
-window.clearElement = function(elem) {
-    elem.innerHTML = "";
+    match result with
+        (model, func) as (M, |Atom[M]| do none) ->
+            spawn (defer func) a
+            model
+        model as M -> model
+*/
+
+callAction = function callAction(action, a, next, func) {
+    func = func || action;
+    a.unary_read(function(res) {
+        var model = action(res);
+        if (model instanceof Array) {
+            _html_register(func, a, _empty_func);
+            if (res !== model) {
+                a.op_set(model[0], _empty_func);
+            }
+            model[1](a, function(new_value) {
+                _html_register(func, a, _empty_func);
+                a.unary_read(function(res) {
+                    if (res !== model) {
+                        a.op_set(new_value, _empty_func);
+                    }
+                })
+            });
+        } else {
+            _html_register(func, a, _empty_func);
+            if (res !== model) {
+                a.op_set(model, _empty_func);
+            }
+        }
+
+     });
+
+   if (next) { next(); }
 }
 
-window.html_hyper = function (type, attrib, children) {
-    var at = {}
-    for (var i = 0; i < attrib.length; i++) {
-        if (typeof attrib[i].value === "function") {
-            at[attrib[i].name] = toSync(attrib[i].value);
-            //toSync(attrib[i].value);
-        } else {
-            at[attrib[i].name] = attrib[i].value;
+read_maybe_pos_atom = function(atom, next) {
+    atom.a.unary_read(function(res) {
+        var throughLens = atom.pos.query(res);
+
+        if (throughLens[0] == 0) {
+            next(throughLens[1]);
+        }
+    })
+}
+
+toEventHandler = function toEventHandler(value) {
+    var a = value.a;
+    var x = value.x;
+
+    if (!a.unary_read) {
+        throw Exception("expecting atom");
+    }
+
+    function clicked(e, next) {
+        callAction(function(model) { return x(model, e); }, a, next, x);
+    }
+
+    return clicked
+}
+
+domNoEvent = function domNoEvent(v) {
+    if (typeof v == "string") { return _html_stringToH(v); }
+    var properties = v.properties;
+
+    var new_props = {};
+    for (var property in properties) {
+        if (!property.startsWith("on")) {
+            new_props[property] = properties[property];
         }
     }
 
+    var new_children;
+    if (v.children instanceof Array) {
+        new_children = [];
+        for (var i = 0; i < v.children.length; i++) {
+            var ch = v.children[i];
+
+            if (ch instanceof VirtualNode) {
+                new_children.push(domNoEvent(ch));
+            } else {
+                new_children.push(ch);
+            }
+        }
+    } else {
+        var ch = v.children;
+        if (ch instanceof VirtualNode) {
+            new_children = domNoEvent(ch);
+        } else {
+            new_children = ch;
+        }
+    }
+
+    return new VirtualNode(v.tagName, new_props, new_children, v.key, v.namespace)
+}
+
+getPrototype = function getPrototype(value) {
+  if (typeof value == "object") {
+    return value;
+  }
+  else if (Object.getPrototypeOf) {
+    return Object.getPrototypeOf(value)
+  } else if (value.__proto__) {
+    return value.__proto__
+  } else if (value.constructor) {
+    return value.constructor.prototype
+  }
+}
+
+toChanEventHandler = function toChanEventHandler(value) {
+    var ch = concurrency_chan(1);
+    var func = value.func;
+
+    function handle(ev) {
+        ch.op_set(ev, _empty_func);
+    }
+
+    var domF = toEventHandler(value.attribute);
+    func(ch,domF,_empty_func);
+
+    return handle;
+}
+
+toDomValue = function toDomValue(propValue) {
+    if (typeof propValue == "object") {
+        if (propValue.func) {
+            return toChanEventHandler(propValue);
+        } else if (propValue.a) {
+            return toEventHandler(propValue);
+        } else {
+            return propValue
+        }
+    }
+    return propValue
+}
+
+clearElement = function(elem) {
+    elem.innerHTML = "";
+}
+
+_main_markdown = function markup(text) {
+    return virtualDom.h("div", { innerHTML: text });
+}
+
+var inIframe = (function () {
+    try {
+        return window.self !== window.top;
+    } catch (e) {
+        return true;
+    }
+})();
+
+var pushStateEvent = new CustomEvent('pushState');
+
+html_hyper = function (type, attrib, children) {
+    var at = {}
+    for (var i = 0; i < attrib.length; i++) {
+        var a = attrib.get(i);
+        if (typeof a.value === "function") {
+            at[a.name] = toSync(a.value);
+            //toSync(attrib[i].value);
+        }  else if (a.name == "style" && at.style) {
+            at.style += a.value;
+        } else if (a.name != "multiple") {
+            at[a.name] = a.value;
+        }
+        else {
+            var attribs = a.value;
+            attrib = attrib.op_add(attribs);
+        }
+    }
+
+    if (at.href && type == "link") {
+        var onclick = at.onclick;
+
+        at.onclick = function(e) {
+            e.preventDefault();
+
+            if (onclick) {
+                onclick(e)
+            }
+
+            history.pushState(null, null, at.href);
+            window.dispatchEvent(pushStateEvent);
+        }
+    }
+
+    if (children instanceof Vector) {
+        children = children.toArray();
+    }
+
+    if (type == "link") { type = "a" }
+
     var res = virtualDom.h(type, at, children);
+
+    if (at.onUnMount) {
+        res.onUnMount = at.onUnMount
+    }
     return res;
 }
 
-window._html_setLocalStorage = function _html_setLocalStorage(item, next) {
+_html_register = function _html_register(func, a, next) {
+    if (typeof calledBy != "undefined") {
+        calledBy.push(func.name + " " + a.toString() + " -> ");
+    }
+    next();
+}
+
+_html_stringToH = function(s) {
+    if (typeof s == "string") {
+        return virtualDom.h("div",{},s);
+    } else {
+        return s
+    }
+}
+
+_html_setLocalStorage = function _html_setLocalStorage(item, next) {
     var obj = JSON.stringify(item);
     localStorage.setItem("data", obj);
     next();
 }
 
-window._html_readLocalStorage = function _html_setLocalStorage(decoder, next) {
+_html_readLocalStorage = function _html_setLocalStorage(decoder, next) {
     var d = localStorage.getItem("data");
     if (!d) {
         next([1]);
@@ -44,41 +236,48 @@ window._html_readLocalStorage = function _html_setLocalStorage(decoder, next) {
     }
 }
 
-window._html_onUrlChange = function _html_onUrlChange(func, next) {
-    window.addEventListener('hashchange', function(){
-        func(window.location.hash.slice(1), function(){})
-    })
-    next();
-}
-
-window._html_setUrl = function _html_setUrl(url, next) {
+_html_setUrl = function _html_setUrl(url, next) {
     window.location.hash = url;
     next();
 }
 
-window._nextTick = function(func, next) {
-    requestAnimationFrame(func.bind(null, function(){}));
+_nextTick = function(func, next) {
+    requestAnimationFrame(function(){
+        func(function(){});
+    });
     next();
 }
 
 var _svg_h = require('virtual-hyperscript-svg');
 
-window.svg_h = function (type, attrib, children) {
+svg_h = function (type, attrib, children) {
     var at = {}
     for (var i = 0; i < attrib.length; i++) {
-        if (typeof attrib[i].value === "function") {
-            at[attrib[i].name] = toSync(attrib[i].value);
+        var a  = attrib.get(i);
+        if (a.name == "multiple") {
+            var attribs = a.value;
+            attrib = attrib.op_add(attribs);
+        }
+    }
+    for (var i = 0; i < attrib.length; i++) {
+        var a = attrib.get(i);
+        if (typeof a.value === "function") {
+            at[a.name] = toSync(a.value);
             //toSync(attrib[i].value);
         } else {
-            at[attrib[i].name] = attrib[i].value;
+            at[a.name] = a.value;
         }
+    }
+
+    if (children instanceof Vector) {
+        children = children.toArray();
     }
 
     var res = _svg_h(type, at, children);
     return res;
 }
 
-window._http_get = function _http_get(url, next) {
+_http_get = function _http_get(url, next) {
     var xmlHttp = new XMLHttpRequest();
     xmlHttp.onreadystatechange = function() {
         if (xmlHttp.readyState == 4) {
@@ -93,7 +292,23 @@ window._http_get = function _http_get(url, next) {
     xmlHttp.send(null);
 }
 
-window.core_watcher = function (a, b) {
+_http_post = function _http_post(url, data, next) {
+    var xmlHttp = new XMLHttpRequest();
+    xmlHttp.onreadystatechange = function() {
+        if (xmlHttp.readyState == 4) {
+            next({
+                body: xmlHttp.responseText,
+                status: xmlHttp.status,
+                contentType: xmlHttp.contentType,
+            })
+        }
+    }
+
+    xmlHttp.open("POST", url, true); // true for asynchronous
+    xmlHttp.send(data);
+}
+
+core_watcher = function (a, b) {
     a.watch(b);
 }
 
@@ -114,11 +329,12 @@ function render(previous) {
     }
 }
 
-window.newThunk = function (fn, arg, key) {
+/*newThunk = function (fn, arg, key) {
     return new Thunk(fn, arg, key)
 }
+*/
 
-window.http_get = function (theUrl, callback)
+http_get = function (theUrl, callback)
 {
     var xmlHttp = new XMLHttpRequest();
     xmlHttp.onreadystatechange = function() {
@@ -129,33 +345,20 @@ window.http_get = function (theUrl, callback)
     xmlHttp.send(null);
 }
 
-window.json_prettify = function (obj, indent) {
+json_prettify = function (obj, indent) {
     return JSON.stringify(JSON.parse(obj), null, indent);
 }
 
-window.html_appendChild = function (a,b) {
+html_appendChild = function (a,b) {
     a.appendChild(b);
 }
 
-window.core_fps = function core_fps(update, maxFPS) {
+core_fps = function core_fps(update, maxFPS) {
     var timestep = 1000 / maxFPS;
     var delta = 0;
     var lastFrameTimeMs = 0;
 
     var stats;
-
-    (function(){
-    var script=document.createElement('script');
-    script.onload=function(){
-        stats=new Stats();
-        var div = document.createElement('div');
-        div.appendChild(stats.dom);
-        stats.dom.style = "position: fixed; top: 0px; right: 0px; cursor: pointer; opacity: 0.9; z-index: 10000;"
-        document.body.appendChild(div)
-    }
-    script.src='//rawgit.com/mrdoob/stats.js/master/build/stats.min.js'
-    document.head.appendChild(script);
-    })()
 
     function _fps(timestamp) {
         if (timestamp < lastFrameTimeMs + (1000 / maxFPS)) {
@@ -167,7 +370,6 @@ window.core_fps = function core_fps(update, maxFPS) {
         delta = timestamp - lastFrameTimeMs; // note += here
         lastFrameTimeMs = timestamp;
 
-
         // Simulate the total elapsed time in fixed-size chunks
         update(delta, function() { if (stats) { stats.update()}; requestAnimationFrame(_fps); });
     }
@@ -175,23 +377,10 @@ window.core_fps = function core_fps(update, maxFPS) {
 }
 
 function isElementInViewport (el) {
-
-    //special bonus for those using jQuery
-    if (typeof jQuery === "function" && el instanceof jQuery) {
-        el = el[0];
+    if (!el) {
+        return false;
     }
 
-    var rect = el.getBoundingClientRect();
-
-    return (
-        rect.top >= 0 &&
-        rect.left >= 0 &&
-        rect.bottom <= (window.innerHeight || document.documentElement.clientHeight) && /*or $(window).height() */
-        rect.right <= (window.innerWidth || document.documentElement.clientWidth) /*or $(window).width() */
-    );
-}
-
-function isElementInViewport (el) {
     var rect = el.getBoundingClientRect();
 
     return (
@@ -203,7 +392,7 @@ function isElementInViewport (el) {
     //);
 }
 
-function onVisibilityChange(el, callback) {
+onVisibilityChange = function onVisibilityChange(el, callback) {
     var old_visible = false;
     return function () {
         if (!old_visible) {
@@ -215,7 +404,7 @@ function onVisibilityChange(el, callback) {
     }
 }
 
-var handlers = [];
+handlers = [];
 
 var handler = function () {
     var l = handlers.length;
@@ -224,13 +413,19 @@ var handler = function () {
     }
 }
 
-window.html_handle = handler;
+html_handle = handler;
 
-window.html_addClassOnVisible = function html_addClassOnVisible(el, className, next) {
-    handlers.push(onVisibilityChange(el, function() {
-        el.className += " "+className;
-    }))
-    next();
+html_addClassOnVisible = function html_addClassOnVisible(className) {
+    function onMount(el) {
+        handlers.push(onVisibilityChange(el, function() {
+            el.className += " "+className;
+        }))
+    }
+
+    return {
+        name: "onMount",
+        value: onMount
+    }
 };
 
 if (window.addEventListener) {
@@ -244,10 +439,6 @@ if (window.addEventListener) {
     attachEvent('onscroll', handler);
     attachEvent('onresize', handler);
 }
-
-
-
-
 },{"virtual-dom":5,"virtual-hyperscript-svg":39}],2:[function(require,module,exports){
 var createElement = require("./vdom/create-element.js")
 
@@ -388,6 +579,7 @@ module.exports = (function split(undef) {
   return self;
 })();
 
+
 },{}],7:[function(require,module,exports){
 'use strict';
 
@@ -502,14 +694,21 @@ module.exports = patch
 var isObject = require("is-object")
 var isHook = require("../vnode/is-vhook.js")
 
-module.exports = applyProperties
+module.exports = applyProperties;
 
 function applyProperties(node, props, previous) {
+
     for (var propName in props) {
         var propValue = props[propName]
 
         if (propValue === undefined) {
             removeProperty(node, propName, propValue, previous);
+        } else if (propName == "onMount") {
+            setTimeout((function(propName, propValue) {
+                return function() {
+                    propValue(node);
+                }
+            })(propName, propValue), 0);
         } else if (isHook(propValue)) {
             removeProperty(node, propName, propValue, previous)
             if (propValue.hook) {
@@ -518,10 +717,15 @@ function applyProperties(node, props, previous) {
                     previous ? previous[propName] : undefined)
             }
         } else {
+            propValue = toDomValue(propValue);
             if (isObject(propValue)) {
                 patchObject(node, props, previous, propName, propValue);
             } else {
-                node[propName] = propValue
+                if(propName === "style") {
+                    node.setAttribute("style", propValue);
+                } else {
+                    node[propName] = propValue
+                }
             }
         }
     }
@@ -537,8 +741,12 @@ function removeProperty(node, propName, propValue, previous) {
                     node.removeAttribute(attrName)
                 }
             } else if (propName === "style") {
-                for (var i in previousValue) {
-                    node.style[i] = ""
+                if (typeof previousValue == "string") {
+                    node.removeAttribute("style");
+                } else {
+                    for (var i in previousValue) {
+                        node.style[i] = ""
+                    }
                 }
             } else if (typeof previousValue === "string") {
                 node[propName] = ""
@@ -640,6 +848,10 @@ function createElement(vnode, opts) {
         if (childNode) {
             node.appendChild(childNode)
         }
+    }
+
+    if (node.onMount) {
+        vnode.onMount(node)
     }
 
     return node
@@ -777,6 +989,9 @@ function removeNode(domNode, vNode) {
 
     if (parentNode) {
         parentNode.removeChild(domNode)
+        if (vNode.onUnMount) {
+            vNode.onUnMount(parentNode)
+        }
     }
 
     destroyWidget(domNode, vNode);
@@ -788,6 +1003,9 @@ function insertNode(parentNode, vNode, renderOptions) {
     var newNode = renderOptions.render(vNode, renderOptions)
 
     if (parentNode) {
+        if (vNode.onMount) {
+            vNode.onMount(newNode)
+        }
         parentNode.appendChild(newNode)
     }
 
@@ -1127,7 +1345,6 @@ function h(tagName, properties, children) {
     if (children !== undefined && children !== null) {
         addChild(children, childNodes, tag, props);
     }
-
 
     return new VNode(tag, props, childNodes, key, namespace);
 }
@@ -1736,12 +1953,10 @@ var isWidget = require("./is-widget")
 var isThunk = require("./is-thunk")
 var isVHook = require("./is-vhook")
 
-module.exports = VirtualNode
-
 var noProperties = {}
 var noChildren = []
 
-function VirtualNode(tagName, properties, children, key, namespace) {
+VirtualNode = function VirtualNode(tagName, properties, children, key, namespace) {
     this.tagName = tagName
     this.properties = properties || noProperties
     this.children = children || noChildren
@@ -1803,6 +2018,8 @@ function VirtualNode(tagName, properties, children, key, namespace) {
 VirtualNode.prototype.version = version
 VirtualNode.prototype.type = "VirtualNode"
 
+module.exports = VirtualNode
+
 },{"./is-thunk":28,"./is-vhook":29,"./is-vnode":30,"./is-widget":32,"./version":33}],35:[function(require,module,exports){
 var version = require("./version")
 
@@ -1845,6 +2062,14 @@ var isHook = require("../vnode/is-vhook")
 
 module.exports = diffProps
 
+function equalsChan(a,b) {
+    return getPrototype(a) == getPrototype(a) && a.func == b.func && equalsEvent(a.attribute, b.attribute);
+}
+
+function equalsEvent(a,b) {
+    return getPrototype(a) == getPrototype(a) && a.a.op_eq(b.a) && a.x === b.x;
+}
+
 function diffProps(a, b) {
     var diff
 
@@ -1857,7 +2082,7 @@ function diffProps(a, b) {
         var aValue = a[aKey]
         var bValue = b[aKey]
 
-        if (aValue === bValue) {
+        if (aValue === bValue || aKey == "onMount") {
             continue
         } else if (isObject(aValue) && isObject(bValue)) {
             if (getPrototype(bValue) !== getPrototype(aValue)) {
@@ -1866,6 +2091,17 @@ function diffProps(a, b) {
             } else if (isHook(bValue)) {
                  diff = diff || {}
                  diff[aKey] = bValue
+            } else if (bValue.func) {
+                diff = diff || {}
+                if (equalsChan(aValue, bValue)) {
+                    diff[aKey] = bValue
+                }
+            } else if (bValue.a) {
+                diff = diff || {};
+
+                if (equalsChan(aValue, bValue)) {
+                    diff[aKey] = bValue
+                }
             } else {
                 var objectDiff = diffProps(aValue, bValue)
                 if (objectDiff) {
@@ -1887,16 +2123,6 @@ function diffProps(a, b) {
     }
 
     return diff
-}
-
-function getPrototype(value) {
-  if (Object.getPrototypeOf) {
-    return Object.getPrototypeOf(value)
-  } else if (value.__proto__) {
-    return value.__proto__
-  } else if (value.constructor) {
-    return value.constructor.prototype
-  }
 }
 
 },{"../vnode/is-vhook":29,"is-object":11}],38:[function(require,module,exports){

@@ -1,2 +1,3 @@
-# Core
-This project is the standard library for Top.
+Core Package
+
+This is the standard library for Top-Lang

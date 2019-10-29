@@ -8,7 +8,7 @@ type Collection[T] =
     name: string
 
 ext node connect: |string| -> DB = "_monk_connect"
-ext node document: [T]|DB, string, |Any| -> T| -> Collection[T] = "_monk_get"
-ext node find: [T]|Collection[T], T{}| do []T = "_monk_find"
+ext node document: [T]|DB, string, Decoder[T]| -> Collection[T] = "_monk_get"
+ext node find: [T]|Collection[T], T{}| do Result[[]T,string] = "_monk_find"
 ext node insert: [T]|Collection[T], T| do none = "_monk_insert"
-ext node search: [T]|Collection[T], T{}, string| do []T = "_monk_search"
+ext node search: [T]|Collection[T], T{}, string| do Result[[]T,string] = "_monk_search"

@@ -1,11 +1,23 @@
+/**
+
+Send a typed request to the server
+@query
+
+```
+type Routes either
+    Hello(|string| -> Response)
+
+query decoder string, Hello
+```
+*/
 
 def end-response[T](x: T) Response =
-    response { body = json-stringify x }
+    response{ body = json-stringify x }
 
-def toUrl[T,U](expects: ||T| -> Response| -> U) string =
-    "query/"+json-stringify expects end-response
-
-def query[T: enum,U](fromJSON: |string| -> T, expects: ||T| -> Response| -> U) T do
-    let url = toUrl expects
-    let body = (get url).body
-    fromJSON body
+def query[T,U: enum](fromJSON: Decoder[T], expects: ||T| -> Response| -> U) Result[T, string] do
+    let res = (post "/query", json-stringify expects end-response)
+    let body = res.body
+    if res.status == 200 then
+        parse-json fromJSON, body
+    else
+        Error "Server responded with {res.status} : {body}"

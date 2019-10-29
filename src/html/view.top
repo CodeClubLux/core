@@ -1,22 +1,107 @@
-type VNode with
-    toString: || -> string
+/** # Html
+This package is used to render html to the browser.
+
+Hello World
+
+```
+import "html"
+
+html.render html.h1 \[], "Hello World!"
+
+```
+A Virtual Dom Node
+@VNode
+
+Native html elements.
+@HtmlElem
+
+Atom that updates the part of global state atom, using lenses
+@PosAtom
+
+Type of Events
+@Event
+
+@Attribute
+
+Initialize and render the application
+@startApp
+
+Render a single frame
+@render
+
+*/
+
+type VNode =
+
+type Html is string or VNode or []VNode
+type Thunk[M] is (M, |Atom[M]| do M)
 
 type Nothing with
 
 type Patches with
+
 type HtmlElem with
     innerHtml: string
+    textContent: string
     value: string
 
 type PosAtom[X, T] =
     a: Atom[X]
     pos: Lens[X, T]
 
+type MaybePosAtom[X, T] =
+    a: Atom[X]
+    pos: MaybeLens[X,T]
+
 def PosAtom[X, T].unary_read(self) T do
     self.pos.query \<-self.a
 
-def PosAtom[X, T].operator_set(self, new: T) do
-    self.a.operator_set self.pos.set \<-self.a, new
+ext full readMaybeLens: [X,T]|MaybePosAtom[X,T]| do T = 'read_maybe_pos_atom'
+
+def MaybePosAtom[X, T].unary_read(self) T do
+    readMaybeLens self
+
+def PosAtom[X, T].toString(self) string =
+    let a = toString self.a
+    let pos = toString self.pos
+
+    a + pos
+
+def MaybePosAtom[X, T].toString(self) string =
+    "{self.a}{self.pos}"
+
+ext full cmpAtom: [T]|Atom[T], Atom[T]| -> bool = 'function(a,b) { return getPrototype(a) == getPrototype(b) && a.op_eq(b); }'
+ext full cmpLens: [X,T]|Lens[X,T], Lens[X,T]| -> bool = 'function(a,b) { return getPrototype(a) == getPrototype(b) && a.op_eq(b); }'
+ext full cmpMaybeLens: [X,T]|MaybeLens[X,T], MaybeLens[X,T]| -> bool = 'function(a,b) { return getPrototype(a) == getPrototype(b) && a.op_eq(b); }'
+
+def PosAtom[X, T].op_eq(self, other: PosAtom[X,T]) bool =
+    (cmpAtom self.a, other.a) and (cmpLens self.pos, other.pos)
+
+def MaybePosAtom[X, T].op_eq(self, other: MaybePosAtom[X,T]) bool =
+    (cmpAtom self.a, other.a) and (cmpMaybeLens self.pos, other.pos)
+
+def PosAtom[X, T].update(self, func: |T| -> T) do
+    let current = <-self.a
+    self.a.op_set self.pos.set current, func self.pos.query current
+
+
+def MaybePosAtom[X, T].update(self, func: |T| -> T) do
+    let current = <-self.a
+    match self.pos.query current with
+        Some res ->
+            self.a.op_set (self.pos.set current, func res)
+            0 //fix bug with adding random }, also <- causes the compile to not find any nodes
+
+        None ->
+            0
+
+def PosAtom[X, T].op_set(self, new: T) do
+    self.a.op_set self.pos.set \<-self.a, new
+
+ext full log-any: |Any| -> none = "console.log"
+
+def MaybePosAtom[X, T].op_set(self, new: T) do
+    self.a.op_set self.pos.set \<-self.a, new
 
 def PosAtom[X, T].watch(self, f: |T| do none) do
     def func(x: X) do
@@ -24,8 +109,21 @@ def PosAtom[X, T].watch(self, f: |T| do none) do
 
     self.a.watch func
 
-def comp[T](func: |T, Atom[T]| -> VNode) |T, Atom[T]| -> VNode =
-    func
+def MaybePosAtom[X, T].watch(self, f: |T| do none) do
+    def func(x: X) do
+        match self.pos.query x with
+            Some res ->
+                f res
+                0
+
+            None ->
+                0
+
+    self.a.watch func
+
+def pipeAtom[T](funcs: []|Atom[T]| do none, a: Atom[T]) Atom[T] do
+    funcs.serial |i: |Atom[T]| do none| do i(a)
+    a
 
 type Event =
     target: HtmlElem
@@ -35,69 +133,41 @@ type Attribute =
     value: Nothing
 
 def newAttrib[T](name: string, value: T) Attribute =
-    Attribute {name, value}
+    Attribute{name, value}
 
-def onEvent[T](name: string, x: |T, Event| do T, a: Atom[T]) Attribute =
-    def clicked(e: Event) do
-        a.operator_set x \<-a, e
+ext client registerEvent: [A,B]||A,B| do A, Atom[A]| do none = "_html_register"
+ext client callAction: [M]| |M| -> M or Thunk[M], Atom[M] | do none = "callAction"
 
-    Attribute {name, clicked}
+type IgnoreOnServer[T] is none or T
 
-ext client _onUrlChange: ||string| do none| do none = "_html_onUrlChange"
-ext client setUrl: |string| do none = "_html_setUrl"
-ext client setLocalStorage: |Any| do none = "_html_setLocalStorage"
-ext client readLocalStorage: [T]||Any| -> T| do Maybe[T] = "_html_readLocalStorage"
 
-ext client page-load-url: string = "window.location.hash.slice(1)"
+def onEvent[T](name: string, ignoreOnClient x: |T, Event| -> T or Thunk[T], ignoreOnClient a: Atom[T]) Attribute =
+    Attribute{name, {a = a, x = x}}
 
-def onUrlChange[T](func: |T, string| do T, a: Atom[T]) do
-    def fired(url: string) do
-        a.operator_set func \<-a, url
-
-    _onUrlChange fired
-
-def async[T](x: |T| do T, a: Atom[T]) || do none =
-    def fired() do
-        a.operator_set x \ <-a
-
-    fired
-
-def ignoreAct[T](f: |T| do T) |T, Event| do T =
-    def func(x: T, y: Event) T do
+def ignoreEv[T](f: |T| -> T or Thunk[T]) |T, Event| -> T or Thunk[T] =
+    def func(x: T, y: Event) T or Thunk[T] =
         f x
 
     func
 
 ext client nextTick: ||| do none| do none = "_nextTick"
 
-def withId[T](f: |T, Event| do T) |int, []T, Event| do []T =
-    def func(id: int, m: []T, e: Event) []T do
-        let res = (f m[id], e)
-        m.set id, res
-
-    func
-
-def mapWithId[T, X](v: |T, int, Atom[X]| -> VNode, arr: []T, a: Atom[X]) VNode =
-    def func(id: int) VNode =
-        v arr[id], id, a
-
-    [0..arr.length].map func
-
-//ext watchHack: [T]|Atom[T], |T| do none| -> none = "core_watcher"
-
-def mapView[T](v: |T, Atom[T]| -> VNode, model: []T, a: Atom[[]T]) VNode =
+def mapView[T](v: |T, Atom[T]| -> VNode, model: []T, a: Atom[[]T]) Html =
     def mapper(idx: int) VNode =
         let result = model[idx]
 
-        let pos = lens []T[idx]
-        let newA: Atom[T] = PosAtom{a, pos }
+        let pos = lens[idx]
+        let newA = PosAtom{a, pos}
 
         v result, newA
 
     [0..model.length].map mapper
 
-def viewFromLens[T, X](v: |X, Atom[X]| -> VNode, model: T, pos: Lens[T, X], a: Atom[T]) VNode =
-    v (pos.query model), PosAtom {a, pos}
+def fromLens[T, X, R](v: |X, Atom[X]| -> R, model: T, a: Atom[T], pos: Lens[T, X]) R =
+    v (pos.query model), PosAtom{a, pos}
+
+def new-embed[T,X,R](model: T, a: Atom[T]) ||X,Atom[X]| -> R, Lens[T,X]| -> R =
+    fromLens _, model, a, _
 
 let style: |string| -> Attribute = newAttrib::[string] "style"
 let placeHolder: |string| -> Attribute = newAttrib::[string] "placeholder"
@@ -105,6 +175,10 @@ let position = newAttrib::[string] "position"
 let _type = newAttrib::[string] "type"
 let height = newAttrib::[string] "height"
 let width = newAttrib::[string] "width"
+let key = newAttrib::[int] "key"
+ext full addClassOnVisible: |string| -> Attribute = "html_addClassOnVisible"
+
+let innerHtml = newAttrib::[string] "innerHTML"
 
 let id = newAttrib::[string] "id"
 
@@ -114,27 +188,48 @@ let step = newAttrib::[int] "step"
 let value = newAttrib::[string] "value"
 let href = newAttrib::[string] "href"
 let src = newAttrib::[string] "src"
+let disabled = newAttrib::[bool] "disabled"
+let multiple = newAttrib::[[]Attribute] "multiple"
 
-let kind = newAttrib::[string] "type"
+type Transition =
+    duration: int
+    enterClass: string
+    leaveClass: string
+
+let transition = newAttrib::[Transition{}] "transition"
+
+let _kind = newAttrib::[string] "type"
 
 let _float = newAttrib::[string] "float"
 
 let class = newAttrib::[string] "className"
+let frameborder = newAttrib::[string] "frameborder"
+let scrolling = newAttrib::[string] "scrolling"
+
+let alt = newAttrib::[string] "alt"
+
+let _async = newAttrib::[bool] "async"
+let charset = newAttrib::[string] "charset"
 
 let onClick = onEvent "onclick"
 let onInput = onEvent "oninput"
 let onChange = onEvent "onchange"
+let on-mouse-leave = onEvent "onmouseleave"
 
-ext client h: |string, []Attribute, VNode| -> VNode = "fromJS(html_hyper)"
+def attrib(name: string, v: Any) Attribute =
+    Attribute{name, v}
+
+let _defer = newAttrib::[bool] "_defer"
+
+ext full h: |string, []Attribute, Html| -> VNode = "html_hyper"
 ext client createElement: |VNode| -> HtmlElem = "virtualDom.create"
 ext client diff: |VNode, VNode| -> Patches = "virtualDom.diff"
 ext client patch: |HtmlElem, Patches| do HtmlElem = "toAsync(virtualDom.patch)"
-
+ext node renderToString: |VNode| -> string = "html__renderToString"
 ext client clear: |HtmlElem| do none = "toAsync(clearElement)"
 
 //ext diff: |VNode, VNode| do Patches = "require('virtual-dom/diff');"
 //ext patch: |VNode, Patches| do none = "require('virtual-dom/patch');"
-
 
 ext client cssSelector: |string| -> HtmlElem = "document.querySelector.bind(document)"
 
@@ -145,6 +240,11 @@ let h4 = h "h4"
 let h5 = h "h5"
 let h6 = h "h6"
 let br = h "br"
+
+let blockquote = h "blockquote"
+let script = h "script"
+
+let iframe = h "iframe"
 
 let hr = h "hr"
 
@@ -158,42 +258,61 @@ let div = h "div"
 let p = h "p"
 let ul = h "ul"
 let li = h "li"
-let a = h "a"
+let link = h "link"
+let r-link = h "a"
 
+let text = h "text", []
+
+let text-area = h "textarea"
+
+ext client _appendChild: |HtmlElem, HtmlElem| do none = "toAsync(html_appendChild)"
+ext client stringToH: |Html| -> VNode = "_html_stringToH"
+ext client domNoEvent: |Html| -> VNode = "domNoEvent"
+ext client queryCode: Maybe[HtmlElem] = '(function() { var code = document.querySelector("#code"); return code.children.length > 0 ? Some(code.children[0]) : None })()'
 let image = h "img"
 let span = h "span"
 
-ext client _appendChild: |HtmlElem, HtmlElem| do none = "toAsync(html_appendChild)"
-
-def render(newTree: VNode) HtmlElem do
-    let rootNode= createElement newTree
+def render(newTree: Html) HtmlElem do
+    let rootNode= createElement stringToH newTree
     let root = cssSelector "#code"
 
     _appendChild root, rootNode
 
     rootNode
 
-def get() do
-
-ext client _handle: || -> none = "html_handle"
-
-def app[T](r: |T, Atom[T]| -> VNode, appstate: Atom[T]) do
-    var oldV = r (<-appstate), appstate
-
-    get!
+def startApp[T](r: |T, Atom[T]| -> Html, appstate: Atom[T]) do
+    var oldV = stringToH r (<-appstate), appstate
 
     var root = render oldV
 
     def rerender(i: T) do
-        let newV = r i, appstate
+        let newV = stringToH r i, appstate
 
         let patches = diff oldV, newV
-        root = patch root, patches
 
-        _handle!
+        root = patch root, patches
 
         oldV = newV
 
     appstate.watch rerender
 
-ext client animateOnVisible: |HtmlElem, string| do none = "html_addClassOnVisible"
+def hydrate[T](r: |T, Atom[T]| -> Html, appstate: Atom[T]) do
+    var oldV = stringToH r (<-appstate), appstate
+
+    var root = match queryCode with
+        Some _div ->
+            log "was able to hydrate"
+            let vWithNoEvent = domNoEvent oldV
+            let addEventHandlers = diff vWithNoEvent, oldV
+            patch _div, addEventHandlers
+        None ->
+            log "re rendered page"
+            render oldV
+
+    def rerender(i: T) do
+        let newV = stringToH r i, appstate
+        let patches = diff oldV, newV
+        root = patch root, patches
+        oldV = newV
+
+    appstate.watch rerender

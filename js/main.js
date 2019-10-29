@@ -1,11 +1,3 @@
-(function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
-  (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
-  m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
-})(window,document,'script','https://www.google-analytics.com/analytics.js','ga');
-
-ga('create', 'UA-91044204-1', 'auto');
-ga('send', 'pageview');
-
 window.virtualDom = require("virtual-dom");
 //require("./three_wrapper");
 
@@ -13,19 +5,63 @@ window.clearElement = function(elem) {
     elem.innerHTML = "";
 }
 
+window._main_markdown = function markup(text) {
+    return virtualDom.h("div", { innerHTML: text });
+}
+
 window.html_hyper = function (type, attrib, children) {
     var at = {}
     for (var i = 0; i < attrib.length; i++) {
-        if (typeof attrib[i].value === "function") {
-            at[attrib[i].name] = toSync(attrib[i].value);
+        var a = attrib.get(i);
+        if (typeof a.value === "function") {
+            at[a.name] = toSync(a.value);
             //toSync(attrib[i].value);
         } else {
-            at[attrib[i].name] = attrib[i].value;
+            at[a.name] = a.value;
         }
     }
 
+    if (at.href && at.href[0] == "#" && type == "a") { //hack to make sure window location change is triggered
+        var onclick = at.onclick;
+
+        at.onclick = function(e) {
+            if (onclick) {
+                onclick(e)
+            }
+            window.location.hash = at.href;
+        }
+    }
+
+    if (children instanceof Vector) {
+        children = children.toArray();
+    }
+
     var res = virtualDom.h(type, at, children);
+
+    if (at.onMount) {
+        res.onMount = at.onMount;
+
+    }
+    if (at.onUnMount) {
+        res.onUnMount = at.onUnMount
+    }
     return res;
+}
+
+window._html_register = function _html_register(func, a, next) {
+    if (typeof calledBy != "undefined") {
+        console.log(a);
+        calledBy.push(func.name + " " + a.toString() + " -> ");
+    }
+    next();
+}
+
+window._html_stringToH = function(s) {
+    if (typeof s == "string") {
+        return virtualDom.h("div",{},s);
+    } else {
+        return s
+    }
 }
 
 window._html_setLocalStorage = function _html_setLocalStorage(item, next) {
@@ -43,20 +79,15 @@ window._html_readLocalStorage = function _html_setLocalStorage(decoder, next) {
     }
 }
 
-window._html_onUrlChange = function _html_onUrlChange(func, next) {
-    window.addEventListener('hashchange', function(){
-        func(window.location.hash.slice(1), function(){})
-    })
-    next();
-}
-
 window._html_setUrl = function _html_setUrl(url, next) {
     window.location.hash = url;
     next();
 }
 
 window._nextTick = function(func, next) {
-    requestAnimationFrame(func.bind(null, function(){}));
+    requestAnimationFrame(function(){
+        func(function(){});
+    });
     next();
 }
 
@@ -78,6 +109,7 @@ window.svg_h = function (type, attrib, children) {
 }
 
 window._http_get = function _http_get(url, next) {
+    console.log("sending http_request");
     var xmlHttp = new XMLHttpRequest();
     xmlHttp.onreadystatechange = function() {
         if (xmlHttp.readyState == 4) {
@@ -90,6 +122,22 @@ window._http_get = function _http_get(url, next) {
     }
     xmlHttp.open("GET", url, true); // true for asynchronous
     xmlHttp.send(null);
+}
+
+window._http_post = function _http_post(url, data, next) {
+    var xmlHttp = new XMLHttpRequest();
+    xmlHttp.onreadystatechange = function() {
+        if (xmlHttp.readyState == 4) {
+            next({
+                body: xmlHttp.responseText,
+                status: xmlHttp.status,
+                contentType: xmlHttp.contentType,
+            })
+        }
+    }
+
+    xmlHttp.open("POST", url, true); // true for asynchronous
+    xmlHttp.send(data);
 }
 
 window.core_watcher = function (a, b) {
@@ -119,6 +167,7 @@ window.newThunk = function (fn, arg, key) {
 
 window.http_get = function (theUrl, callback)
 {
+    console.log("sending http request");
     var xmlHttp = new XMLHttpRequest();
     xmlHttp.onreadystatechange = function() {
         if (xmlHttp.readyState == 4 && xmlHttp.status == 200)
@@ -143,19 +192,6 @@ window.core_fps = function core_fps(update, maxFPS) {
 
     var stats;
 
-    (function(){
-    var script=document.createElement('script');
-    script.onload=function(){
-        stats=new Stats();
-        var div = document.createElement('div');
-        div.appendChild(stats.dom);
-        stats.dom.style = "position: fixed; top: 0px; right: 0px; cursor: pointer; opacity: 0.9; z-index: 10000;"
-        document.body.appendChild(div)
-    }
-    script.src='//rawgit.com/mrdoob/stats.js/master/build/stats.min.js'
-    document.head.appendChild(script);
-    })()
-
     function _fps(timestamp) {
         if (timestamp < lastFrameTimeMs + (1000 / maxFPS)) {
             requestAnimationFrame(_fps);
@@ -166,7 +202,6 @@ window.core_fps = function core_fps(update, maxFPS) {
         delta = timestamp - lastFrameTimeMs; // note += here
         lastFrameTimeMs = timestamp;
 
-
         // Simulate the total elapsed time in fixed-size chunks
         update(delta, function() { if (stats) { stats.update()}; requestAnimationFrame(_fps); });
     }
@@ -174,23 +209,10 @@ window.core_fps = function core_fps(update, maxFPS) {
 }
 
 function isElementInViewport (el) {
-
-    //special bonus for those using jQuery
-    if (typeof jQuery === "function" && el instanceof jQuery) {
-        el = el[0];
+    if (!el) {
+        return false;
     }
 
-    var rect = el.getBoundingClientRect();
-
-    return (
-        rect.top >= 0 &&
-        rect.left >= 0 &&
-        rect.bottom <= (window.innerHeight || document.documentElement.clientHeight) && /*or $(window).height() */
-        rect.right <= (window.innerWidth || document.documentElement.clientWidth) /*or $(window).width() */
-    );
-}
-
-function isElementInViewport (el) {
     var rect = el.getBoundingClientRect();
 
     return (
@@ -225,11 +247,17 @@ var handler = function () {
 
 window.html_handle = handler;
 
-window.html_addClassOnVisible = function html_addClassOnVisible(el, className, next) {
-    handlers.push(onVisibilityChange(el, function() {
-        el.className += " "+className;
-    }))
-    next();
+window.html_addClassOnVisible = function html_addClassOnVisible(className) {
+    function onMount(el) {
+        handlers.push(onVisibilityChange(el, function() {
+            el.className += " "+className;
+        }))
+    }
+
+    return {
+        name: "onMount",
+        value: onMount
+    }
 };
 
 if (window.addEventListener) {
@@ -243,6 +271,3 @@ if (window.addEventListener) {
     attachEvent('onscroll', handler);
     attachEvent('onresize', handler);
 }
-
-
-
