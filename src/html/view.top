@@ -49,6 +49,7 @@ type PosAtom[X, T] =
     a: Atom[X]
     pos: Lens[X, T]
 
+
 type MaybePosAtom[X, T] =
     a: Atom[X]
     pos: MaybeLens[X,T]
@@ -58,8 +59,10 @@ def PosAtom[X, T].unary_read(self) T do
 
 ext full readMaybeLens: [X,T]|MaybePosAtom[X,T]| do T = 'read_maybe_pos_atom'
 
+
 def MaybePosAtom[X, T].unary_read(self) T do
     readMaybeLens self
+
 
 def PosAtom[X, T].toString(self) string =
     let a = toString self.a
@@ -67,8 +70,10 @@ def PosAtom[X, T].toString(self) string =
 
     a + pos
 
+
 def MaybePosAtom[X, T].toString(self) string =
     "{self.a}{self.pos}"
+
 
 ext full cmpAtom: [T]|Atom[T], Atom[T]| -> bool = 'function(a,b) { return getPrototype(a) == getPrototype(b) && a.op_eq(b); }'
 ext full cmpLens: [X,T]|Lens[X,T], Lens[X,T]| -> bool = 'function(a,b) { return getPrototype(a) == getPrototype(b) && a.op_eq(b); }'
@@ -77,8 +82,10 @@ ext full cmpMaybeLens: [X,T]|MaybeLens[X,T], MaybeLens[X,T]| -> bool = 'function
 def PosAtom[X, T].op_eq(self, other: PosAtom[X,T]) bool =
     (cmpAtom self.a, other.a) and (cmpLens self.pos, other.pos)
 
+
 def MaybePosAtom[X, T].op_eq(self, other: MaybePosAtom[X,T]) bool =
     (cmpAtom self.a, other.a) and (cmpMaybeLens self.pos, other.pos)
+
 
 def PosAtom[X, T].update(self, func: |T| -> T) do
     let current = <-self.a
@@ -95,19 +102,23 @@ def MaybePosAtom[X, T].update(self, func: |T| -> T) do
         None ->
             0
 
+
 def PosAtom[X, T].op_set(self, new: T) do
     self.a.op_set self.pos.set \<-self.a, new
 
 ext full log-any: |Any| -> none = "console.log"
 
+
 def MaybePosAtom[X, T].op_set(self, new: T) do
     self.a.op_set self.pos.set \<-self.a, new
+
 
 def PosAtom[X, T].watch(self, f: |T| do none) do
     def func(x: X) do
         f self.pos.query \<-self.a
 
     self.a.watch func
+
 
 def MaybePosAtom[X, T].watch(self, f: |T| do none) do
     def func(x: X) do
@@ -120,6 +131,7 @@ def MaybePosAtom[X, T].watch(self, f: |T| do none) do
                 0
 
     self.a.watch func
+
 
 def pipeAtom[T](funcs: []|Atom[T]| do none, a: Atom[T]) Atom[T] do
     funcs.serial |i: |Atom[T]| do none| do i(a)
